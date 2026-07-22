@@ -1,0 +1,29 @@
+{
+  "name": "mubu-obsidian-sync",
+  "version": "0.1.0",
+  "description": "One-way sync from Mubu to Obsidian",
+  "author": "Pebble",
+  "main": "main.js",
+  "scripts": {
+    "build": "node esbuild.config.mjs production",
+    "dev": "node esbuild.config.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/**/*.test.ts",
+    "check": "npm run typecheck && npm test && npm run build"
+  },
+  "keywords": [
+    "obsidian",
+    "mubu",
+    "sync"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/jsdom": "^21.1.7",
+    "esbuild": "^0.25.0",
+    "jsdom": "^26.0.0",
+    "obsidian": "latest",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

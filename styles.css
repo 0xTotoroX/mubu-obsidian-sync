@@ -1,0 +1,25 @@
+.mubu-sync-login-status {
+  margin: 0.75rem 0;
+  padding: 0.75rem;
+  border-radius: var(--radius-s);
+  background: var(--background-secondary);
+}
+
+.mubu-sync-login-status.is-connected {
+  color: var(--text-success);
+}
+
+.mubu-sync-login-status.is-disconnected {
+  color: var(--text-muted);
+}
+
+.mubu-sync-settings-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin: 1rem 0;
+}
+
+.mubu-sync-settings-note {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}

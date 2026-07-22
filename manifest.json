@@ -1,0 +1,9 @@
+{
+  "id": "mubu-sync",
+  "name": "Mubu Sync",
+  "version": "0.1.0",
+  "minAppVersion": "1.11.4",
+  "description": "One-way sync Mubu documents into an Obsidian vault.",
+  "author": "Pebble",
+  "isDesktopOnly": true
+}
