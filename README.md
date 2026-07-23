@@ -1,5 +1,15 @@
 # Mubu Sync
 
+One-way, incremental sync of your Mubu documents into your vault. Sign in once, then sync on startup or on a configurable schedule. This community plugin is independent and is not affiliated with or endorsed by Mubu.
+
+## English overview
+
+- Sync Mubu folders and documents into Markdown files while preserving hierarchy.
+- Track documents by Mubu ID, so remote renames and moves are reflected locally.
+- Preserve local notes outside the managed section of each file.
+- Support nested nodes, notes, tasks, due dates, formulas, tables, and remote images.
+- Store the Mubu login token in the host application's secure secret storage; it is never written to plugin settings.
+
 将幕布文档单向、增量同步到 Obsidian。交互方式参考 Flomo Sync：登录一次后，可在启动时或按固定间隔自动同步。
 
 > 当前版本是 MVP，使用幕布网页内部接口，并非幕布官方集成。接口变化可能导致插件失效。
