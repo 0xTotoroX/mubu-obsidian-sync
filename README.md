@@ -46,6 +46,8 @@ When the plugin is available in the Community directory, open **Settings → Com
 
 The first sync imports your available Mubu documents. Later syncs update only documents whose remote content has changed.
 
+If the Mubu session expires, the sign-in window stays open and asks you to sign in again. The **Clear** action removes both the saved token and the plugin's dedicated Mubu browser session, which is useful when starting over.
+
 ## How synced files work
 
 Each document is saved as a Markdown file with its Mubu document ID in frontmatter. The plugin owns only the region between these markers:
@@ -145,6 +147,8 @@ Mubu Sync 是一款桌面端社区插件，用于将幕布文档单向、稳定�
 4. 点击 **立即同步**。
 
 首次同步会导入可访问的幕布文档；之后仅更新远端内容发生变化的文档。
+
+如果幕布登录会话过期，登录窗口会保留并提示重新登录。点击 **清除** 会同时删除已保存的 Token 和插件专用的幕布登录会话，便于重新开始。
 
 ## 同步文件与本地补充
 

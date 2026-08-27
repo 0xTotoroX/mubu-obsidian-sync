@@ -6,7 +6,7 @@ import {
   PluginSettingTab,
   Setting
 } from "obsidian";
-import { loginToMubu } from "./auth";
+import { clearMubuLoginSession, loginToMubu } from "./auth";
 import { MubuApiError, MubuClient } from "./mubu-api";
 import { MubuSyncEngine } from "./sync-engine";
 import type { LegacyMubuSyncSettings, MubuSyncSettings, SyncResult } from "./types";
@@ -189,6 +189,13 @@ export default class MubuSyncPlugin extends Plugin {
     this.app.secretStorage.setSecret(TOKEN_SECRET_ID, token.trim());
   }
 
+  async clearLogin(): Promise<void> {
+    this.setJwtToken("");
+    await clearMubuLoginSession();
+    await this.saveSettings();
+    this.restartInterval();
+  }
+
   private stopInterval(): void {
     if (this.intervalId !== null) {
       window.clearInterval(this.intervalId);
@@ -253,10 +260,8 @@ class MubuSyncSettingTab extends PluginSettingTab {
       .addButton(button => button
         .setButtonText("清除")
         .onClick(async () => {
-          this.plugin.setJwtToken("");
-          await this.plugin.saveSettings();
-          this.plugin.restartInterval();
-          new Notice("幕布登录凭证已清除");
+          await this.plugin.clearLogin();
+          new Notice("幕布登录凭证和登录会话已清除");
           this.display();
         }));
 

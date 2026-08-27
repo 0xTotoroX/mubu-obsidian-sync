@@ -1,4 +1,5 @@
 import { requestUrl } from "obsidian";
+import { isAuthenticationMessage } from "./auth-state";
 import type {
   MubuDefinition,
   MubuDocumentDetail,
@@ -36,7 +37,7 @@ export class MubuApiError extends Error {
   get isAuthenticationError(): boolean {
     return this.status === 401
       || this.status === 403
-      || /token|jwt|登录|认证|未授权/i.test(this.message);
+      || isAuthenticationMessage(this.message);
   }
 }
 

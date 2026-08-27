@@ -25,94 +25,15 @@ module.exports = __toCommonJS(main_exports);
 var import_obsidian4 = require("obsidian");
 
 // src/auth.ts
-var import_obsidian = require("obsidian");
-var LOGIN_URL = "https://mubu.com";
-var SESSION_PARTITION = "persist:mubu-sync";
-async function loginToMubu(verifyToken) {
-  if (!import_obsidian.Platform.isDesktop) {
-    throw new Error("\u5E55\u5E03\u81EA\u52A8\u767B\u5F55\u76EE\u524D\u4EC5\u652F\u6301 Obsidian \u684C\u9762\u7248");
-  }
-  const BrowserWindow = resolveBrowserWindow();
-  if (!BrowserWindow) {
-    throw new Error("\u5F53\u524D Obsidian \u65E0\u6CD5\u6253\u5F00\u5E55\u5E03\u767B\u5F55\u7A97\u53E3\uFF0C\u8BF7\u4F7F\u7528\u624B\u52A8 Token \u6A21\u5F0F");
-  }
-  return new Promise((resolve, reject) => {
-    const win = new BrowserWindow({
-      width: 480,
-      height: 720,
-      title: "\u767B\u5F55\u5E55\u5E03",
-      show: true,
-      webPreferences: {
-        nodeIntegration: false,
-        contextIsolation: true,
-        sandbox: true,
-        partition: SESSION_PARTITION
-      }
-    });
-    let settled = false;
-    let checking = false;
-    const finish = (token) => {
-      if (settled) return;
-      settled = true;
-      window.clearInterval(timer);
-      resolve(token);
-    };
-    const fail = (error) => {
-      if (settled) return;
-      settled = true;
-      window.clearInterval(timer);
-      reject(error);
-    };
-    const timer = window.setInterval(() => {
-      if (checking || settled || win.isDestroyed()) return;
-      checking = true;
-      void readJwtToken(win.webContents.session).then(async (token) => {
-        if (!token || settled) return;
-        await verifyToken(token);
-        finish(token);
-        if (!win.isDestroyed()) win.close();
-      }).catch((error) => {
-        const message = error instanceof Error ? error.message : String(error);
-        if (!/token|jwt|登录|认证|401|403/i.test(message)) {
-          fail(error);
-          if (!win.isDestroyed()) win.close();
-        }
-      }).finally(() => {
-        checking = false;
-      });
-    }, 1e3);
-    win.on("closed", () => finish(null));
-    try {
-      void win.loadURL(LOGIN_URL);
-    } catch (error) {
-      fail(error);
-    }
-  });
-}
-async function readJwtToken(session) {
-  const cookies = await session.cookies.get({ url: LOGIN_URL, name: "Jwt-Token" });
-  const token = cookies.find((cookie) => cookie.name === "Jwt-Token")?.value.trim();
-  return token || null;
-}
-function resolveBrowserWindow() {
-  const requireFn = window.require;
-  if (!requireFn) return null;
-  try {
-    const electron = requireFn("electron");
-    if (electron.remote?.BrowserWindow) return electron.remote.BrowserWindow;
-    if (electron.BrowserWindow) return electron.BrowserWindow;
-  } catch {
-  }
-  try {
-    const remote = requireFn("@electron/remote");
-    return remote.BrowserWindow ?? null;
-  } catch {
-    return null;
-  }
+var import_obsidian2 = require("obsidian");
+
+// src/auth-state.ts
+function isAuthenticationMessage(message) {
+  return /token|jwt|登录|认证|未授权|expired|expire|session|login\s+(?:expired|inspired|invalid)/i.test(message);
 }
 
 // src/mubu-api.ts
-var import_obsidian2 = require("obsidian");
+var import_obsidian = require("obsidian");
 var API = {
   documentsPage: "https://api2.mubu.com/v3/api/list/get_all_documents_page",
   list: "https://api2.mubu.com/v3/api/list/get",
@@ -127,7 +48,7 @@ var MubuApiError = class extends Error {
     this.code = options.code;
   }
   get isAuthenticationError() {
-    return this.status === 401 || this.status === 403 || /token|jwt|登录|认证|未授权/i.test(this.message);
+    return this.status === 401 || this.status === 403 || isAuthenticationMessage(this.message);
   }
 };
 var MubuClient = class {
@@ -233,7 +154,7 @@ var MubuClient = class {
   }
   async post(url, body) {
     try {
-      const response = await (0, import_obsidian2.requestUrl)({
+      const response = await (0, import_obsidian.requestUrl)({
         url,
         method: "POST",
         headers: {
@@ -333,6 +254,138 @@ function firstString(record, keys) {
 }
 function errorMessage(error) {
   return error instanceof Error ? error.message : String(error);
+}
+
+// src/auth.ts
+var LOGIN_URL = "https://mubu.com";
+var SESSION_PARTITION = "persist:mubu-sync";
+var JWT_COOKIE_NAME = "Jwt-Token";
+async function clearMubuLoginSession() {
+  const session = resolveSession();
+  if (!session) return;
+  try {
+    await session.cookies.remove(LOGIN_URL, JWT_COOKIE_NAME);
+  } catch (error) {
+    console.warn("[Mubu Sync] Could not clear the Mubu login cookie", error);
+  }
+}
+async function loginToMubu(verifyToken) {
+  if (!import_obsidian2.Platform.isDesktop) {
+    throw new Error("\u5E55\u5E03\u81EA\u52A8\u767B\u5F55\u76EE\u524D\u4EC5\u652F\u6301 Obsidian \u684C\u9762\u7248");
+  }
+  const BrowserWindow = resolveBrowserWindow();
+  if (!BrowserWindow) {
+    throw new Error("\u5F53\u524D Obsidian \u65E0\u6CD5\u6253\u5F00\u5E55\u5E03\u767B\u5F55\u7A97\u53E3\uFF0C\u8BF7\u4F7F\u7528\u624B\u52A8 Token \u6A21\u5F0F");
+  }
+  return new Promise((resolve, reject) => {
+    const win = new BrowserWindow({
+      width: 480,
+      height: 720,
+      title: "\u767B\u5F55\u5E55\u5E03",
+      show: true,
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        sandbox: true,
+        partition: SESSION_PARTITION
+      }
+    });
+    let settled = false;
+    let checking = false;
+    let rejectedToken = "";
+    const finish = (token) => {
+      if (settled) return;
+      settled = true;
+      window.clearInterval(timer);
+      resolve(token);
+    };
+    const fail = (error) => {
+      if (settled) return;
+      settled = true;
+      window.clearInterval(timer);
+      reject(error);
+    };
+    const timer = window.setInterval(() => {
+      if (checking || settled || win.isDestroyed()) return;
+      checking = true;
+      void readJwtToken(win.webContents.session).then(async (token) => {
+        if (!token || settled || token === rejectedToken) return;
+        try {
+          await verifyToken(token);
+          finish(token);
+          if (!win.isDestroyed()) win.close();
+        } catch (error) {
+          if (!isExpiredMubuLogin(error)) throw error;
+          rejectedToken = token;
+          await clearJwtCookie(win.webContents.session);
+          if (!win.isDestroyed()) {
+            new import_obsidian2.Notice("\u5E55\u5E03\u767B\u5F55\u5DF2\u8FC7\u671F\uFF0C\u8BF7\u5728\u7A97\u53E3\u4E2D\u91CD\u65B0\u767B\u5F55");
+            await Promise.resolve(win.loadURL(LOGIN_URL));
+          }
+        }
+      }).catch((error) => {
+        if (!isExpiredMubuLogin(error)) {
+          fail(error);
+          if (!win.isDestroyed()) win.close();
+        }
+      }).finally(() => {
+        checking = false;
+      });
+    }, 1e3);
+    win.on("closed", () => finish(null));
+    try {
+      void win.loadURL(LOGIN_URL);
+    } catch (error) {
+      fail(error);
+    }
+  });
+}
+async function readJwtToken(session) {
+  const cookies = await session.cookies.get({ url: LOGIN_URL, name: JWT_COOKIE_NAME });
+  const token = cookies.find((cookie) => cookie.name === JWT_COOKIE_NAME)?.value.trim();
+  return token || null;
+}
+async function clearJwtCookie(session) {
+  try {
+    await session.cookies.remove(LOGIN_URL, JWT_COOKIE_NAME);
+  } catch (error) {
+    console.warn("[Mubu Sync] Could not clear expired Mubu login cookie", error);
+  }
+}
+function isExpiredMubuLogin(error) {
+  return error instanceof MubuApiError ? error.isAuthenticationError : isAuthenticationMessage(error instanceof Error ? error.message : String(error));
+}
+function resolveBrowserWindow() {
+  const requireFn = window.require;
+  if (!requireFn) return null;
+  try {
+    const electron = requireFn("electron");
+    if (electron.remote?.BrowserWindow) return electron.remote.BrowserWindow;
+    if (electron.BrowserWindow) return electron.BrowserWindow;
+  } catch {
+  }
+  try {
+    const remote = requireFn("@electron/remote");
+    return remote.BrowserWindow ?? null;
+  } catch {
+    return null;
+  }
+}
+function resolveSession() {
+  const requireFn = window.require;
+  if (!requireFn) return null;
+  try {
+    const electron = requireFn("electron");
+    const sessionModule = electron.remote?.session ?? electron.session;
+    if (sessionModule) return sessionModule.fromPartition(SESSION_PARTITION);
+  } catch {
+  }
+  try {
+    const remote = requireFn("@electron/remote");
+    return remote.session?.fromPartition(SESSION_PARTITION) ?? null;
+  } catch {
+    return null;
+  }
 }
 
 // src/sync-engine.ts
@@ -916,6 +969,12 @@ var MubuSyncPlugin = class extends import_obsidian4.Plugin {
   setJwtToken(token) {
     this.app.secretStorage.setSecret(TOKEN_SECRET_ID, token.trim());
   }
+  async clearLogin() {
+    this.setJwtToken("");
+    await clearMubuLoginSession();
+    await this.saveSettings();
+    this.restartInterval();
+  }
   stopInterval() {
     if (this.intervalId !== null) {
       window.clearInterval(this.intervalId);
@@ -956,10 +1015,8 @@ var MubuSyncSettingTab = class extends import_obsidian4.PluginSettingTab {
       new import_obsidian4.Notice("\u5E55\u5E03 Token \u5DF2\u4FDD\u5B58\u5230 SecretStorage");
       this.display();
     })).addButton((button) => button.setButtonText("\u9A8C\u8BC1").onClick(() => void this.plugin.verifySavedToken())).addButton((button) => button.setButtonText("\u6E05\u9664").onClick(async () => {
-      this.plugin.setJwtToken("");
-      await this.plugin.saveSettings();
-      this.plugin.restartInterval();
-      new import_obsidian4.Notice("\u5E55\u5E03\u767B\u5F55\u51ED\u8BC1\u5DF2\u6E05\u9664");
+      await this.plugin.clearLogin();
+      new import_obsidian4.Notice("\u5E55\u5E03\u767B\u5F55\u51ED\u8BC1\u548C\u767B\u5F55\u4F1A\u8BDD\u5DF2\u6E05\u9664");
       this.display();
     }));
     new import_obsidian4.Setting(containerEl).setName("\u540C\u6B65\u76EE\u5F55").setDesc("\u5E55\u5E03\u6587\u6863\u5199\u5165\u7684 Obsidian \u4ED3\u5E93\u76EE\u5F55").addText((text) => text.setPlaceholder("Mubu").setValue(this.plugin.settings.syncFolder).onChange(async (value) => {
