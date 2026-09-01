@@ -69,7 +69,7 @@ export default class MubuSyncPlugin extends Plugin {
 
   async login(): Promise<void> {
     try {
-      new Notice("请在弹出的窗口中登录幕布…");
+      new Notice("请在弹出的窗口内完成登录，不要跳到系统浏览器…");
       const token = await loginToMubu(async candidate => {
         await new MubuClient(candidate).verifyAuthentication();
       });
@@ -222,7 +222,7 @@ class MubuSyncSettingTab extends PluginSettingTab {
     if (Platform.isDesktop) {
       new Setting(containerEl)
         .setName("登录幕布")
-        .setDesc("打开独立的幕布登录窗口，登录成功后自动获取凭证")
+        .setDesc("打开独立的幕布登录窗口；每次登录都会清空插件内的幕布会话，便于切换账号")
         .addButton(button => button
           .setButtonText(connected ? "重新登录" : "登录")
           .setCta()
@@ -261,7 +261,7 @@ class MubuSyncSettingTab extends PluginSettingTab {
         .setButtonText("清除")
         .onClick(async () => {
           await this.plugin.clearLogin();
-          new Notice("幕布登录凭证和登录会话已清除");
+          new Notice("幕布登录凭证和插件内的幕布会话已清除，可重新登录其他账号");
           this.display();
         }));
 

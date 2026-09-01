@@ -32,6 +32,17 @@ function isAuthenticationMessage(message) {
   return /token|jwt|登录|认证|未授权|expired|expire|session|login\s+(?:expired|inspired|invalid)/i.test(message);
 }
 
+// src/login-navigation.ts
+function isAllowedLoginNavigation(url) {
+  if (!url || url === "about:blank") return true;
+  try {
+    const protocol = new URL(url).protocol;
+    return protocol === "http:" || protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 // src/mubu-api.ts
 var import_obsidian = require("obsidian");
 var API = {
@@ -258,16 +269,28 @@ function errorMessage(error) {
 
 // src/auth.ts
 var LOGIN_URL = "https://mubu.com";
+var LOGIN_PAGE_URL = "https://mubu.com/login";
 var SESSION_PARTITION = "persist:mubu-sync";
 var JWT_COOKIE_NAME = "Jwt-Token";
+var LOGIN_WINDOW_PREFERENCES = {
+  nodeIntegration: false,
+  contextIsolation: true,
+  sandbox: true,
+  partition: SESSION_PARTITION
+};
+function isJwtCookie(cookie) {
+  return cookie.name.toLowerCase() === JWT_COOKIE_NAME.toLowerCase();
+}
+function cookieUrl(cookie) {
+  const domain = (cookie.domain || "mubu.com").replace(/^\./, "");
+  const path = cookie.path || "/";
+  const protocol = cookie.secure === false ? "http" : "https";
+  return `${protocol}://${domain}${path}`;
+}
 async function clearMubuLoginSession() {
   const session = resolveSession();
   if (!session) return;
-  try {
-    await session.cookies.remove(LOGIN_URL, JWT_COOKIE_NAME);
-  } catch (error) {
-    console.warn("[Mubu Sync] Could not clear the Mubu login cookie", error);
-  }
+  await clearMubuSessionData(session);
 }
 async function loginToMubu(verifyToken) {
   if (!import_obsidian2.Platform.isDesktop) {
@@ -277,19 +300,18 @@ async function loginToMubu(verifyToken) {
   if (!BrowserWindow) {
     throw new Error("\u5F53\u524D Obsidian \u65E0\u6CD5\u6253\u5F00\u5E55\u5E03\u767B\u5F55\u7A97\u53E3\uFF0C\u8BF7\u4F7F\u7528\u624B\u52A8 Token \u6A21\u5F0F");
   }
+  const win = new BrowserWindow({
+    width: 480,
+    height: 720,
+    title: "\u767B\u5F55\u5E55\u5E03",
+    show: true,
+    autoHideMenuBar: true,
+    webPreferences: LOGIN_WINDOW_PREFERENCES
+  });
+  reclaimLoginWindow(win);
+  await clearMubuSessionData(win.webContents.session);
+  if (win.isDestroyed()) return null;
   return new Promise((resolve, reject) => {
-    const win = new BrowserWindow({
-      width: 480,
-      height: 720,
-      title: "\u767B\u5F55\u5E55\u5E03",
-      show: true,
-      webPreferences: {
-        nodeIntegration: false,
-        contextIsolation: true,
-        sandbox: true,
-        partition: SESSION_PARTITION
-      }
-    });
     let settled = false;
     let checking = false;
     let rejectedToken = "";
@@ -320,7 +342,7 @@ async function loginToMubu(verifyToken) {
           await clearJwtCookie(win.webContents.session);
           if (!win.isDestroyed()) {
             new import_obsidian2.Notice("\u5E55\u5E03\u767B\u5F55\u5DF2\u8FC7\u671F\uFF0C\u8BF7\u5728\u7A97\u53E3\u4E2D\u91CD\u65B0\u767B\u5F55");
-            await Promise.resolve(win.loadURL(LOGIN_URL));
+            await Promise.resolve(win.loadURL(LOGIN_PAGE_URL));
           }
         }
       }).catch((error) => {
@@ -334,20 +356,81 @@ async function loginToMubu(verifyToken) {
     }, 1e3);
     win.on("closed", () => finish(null));
     try {
-      void win.loadURL(LOGIN_URL);
+      void win.loadURL(LOGIN_PAGE_URL);
     } catch (error) {
       fail(error);
     }
   });
 }
+function reclaimLoginWindow(win) {
+  const contents = win.webContents;
+  try {
+    contents.removeAllListeners("will-navigate");
+  } catch (error) {
+    console.warn("[Mubu Sync] Could not detach Obsidian navigation handlers", error);
+  }
+  try {
+    contents.setWindowOpenHandler(({ url }) => {
+      if (!isAllowedLoginNavigation(url)) return { action: "deny" };
+      return {
+        action: "allow",
+        overrideBrowserWindowOptions: {
+          width: 520,
+          height: 760,
+          title: "\u767B\u5F55\u5E55\u5E03",
+          autoHideMenuBar: true,
+          webPreferences: LOGIN_WINDOW_PREFERENCES
+        }
+      };
+    });
+  } catch (error) {
+    console.warn("[Mubu Sync] Could not keep Mubu login popups in-app", error);
+  }
+  try {
+    contents.on("will-navigate", (event, url) => {
+      if (isAllowedLoginNavigation(url)) return;
+      event.preventDefault();
+    });
+  } catch (error) {
+    console.warn("[Mubu Sync] Could not allow in-window Mubu login navigation", error);
+  }
+  try {
+    contents.on("did-create-window", (child) => {
+      reclaimLoginWindow(child);
+    });
+  } catch (error) {
+    console.warn("[Mubu Sync] Could not reclaim Mubu login child windows", error);
+  }
+}
 async function readJwtToken(session) {
-  const cookies = await session.cookies.get({ url: LOGIN_URL, name: JWT_COOKIE_NAME });
-  const token = cookies.find((cookie) => cookie.name === JWT_COOKIE_NAME)?.value.trim();
+  const cookies = await session.cookies.get({});
+  const token = cookies.find(isJwtCookie)?.value.trim();
   return token || null;
+}
+async function clearMubuSessionData(session) {
+  try {
+    if (session.clearStorageData) {
+      await session.clearStorageData();
+    }
+  } catch (error) {
+    console.warn("[Mubu Sync] Could not clear Mubu login storage", error);
+  }
+  try {
+    const cookies = await session.cookies.get({});
+    await Promise.all(cookies.map((cookie) => session.cookies.remove(cookieUrl(cookie), cookie.name)));
+  } catch (error) {
+    console.warn("[Mubu Sync] Could not clear Mubu login cookies", error);
+  }
 }
 async function clearJwtCookie(session) {
   try {
-    await session.cookies.remove(LOGIN_URL, JWT_COOKIE_NAME);
+    const cookies = await session.cookies.get({});
+    const targets = cookies.filter(isJwtCookie);
+    if (targets.length === 0) {
+      await session.cookies.remove(LOGIN_URL, JWT_COOKIE_NAME);
+      return;
+    }
+    await Promise.all(targets.map((cookie) => session.cookies.remove(cookieUrl(cookie), cookie.name)));
   } catch (error) {
     console.warn("[Mubu Sync] Could not clear expired Mubu login cookie", error);
   }
@@ -864,7 +947,7 @@ var MubuSyncPlugin = class extends import_obsidian4.Plugin {
   }
   async login() {
     try {
-      new import_obsidian4.Notice("\u8BF7\u5728\u5F39\u51FA\u7684\u7A97\u53E3\u4E2D\u767B\u5F55\u5E55\u5E03\u2026");
+      new import_obsidian4.Notice("\u8BF7\u5728\u5F39\u51FA\u7684\u7A97\u53E3\u5185\u5B8C\u6210\u767B\u5F55\uFF0C\u4E0D\u8981\u8DF3\u5230\u7CFB\u7EDF\u6D4F\u89C8\u5668\u2026");
       const token = await loginToMubu(async (candidate) => {
         await new MubuClient(candidate).verifyAuthentication();
       });
@@ -996,7 +1079,7 @@ var MubuSyncSettingTab = class extends import_obsidian4.PluginSettingTab {
       text: connected ? "\u25CF \u5DF2\u4FDD\u5B58\u5E55\u5E03\u767B\u5F55\u51ED\u8BC1" : "\u25CB \u5C1A\u672A\u767B\u5F55\u5E55\u5E03"
     });
     if (import_obsidian4.Platform.isDesktop) {
-      new import_obsidian4.Setting(containerEl).setName("\u767B\u5F55\u5E55\u5E03").setDesc("\u6253\u5F00\u72EC\u7ACB\u7684\u5E55\u5E03\u767B\u5F55\u7A97\u53E3\uFF0C\u767B\u5F55\u6210\u529F\u540E\u81EA\u52A8\u83B7\u53D6\u51ED\u8BC1").addButton((button) => button.setButtonText(connected ? "\u91CD\u65B0\u767B\u5F55" : "\u767B\u5F55").setCta().onClick(() => void this.plugin.login()));
+      new import_obsidian4.Setting(containerEl).setName("\u767B\u5F55\u5E55\u5E03").setDesc("\u6253\u5F00\u72EC\u7ACB\u7684\u5E55\u5E03\u767B\u5F55\u7A97\u53E3\uFF1B\u6BCF\u6B21\u767B\u5F55\u90FD\u4F1A\u6E05\u7A7A\u63D2\u4EF6\u5185\u7684\u5E55\u5E03\u4F1A\u8BDD\uFF0C\u4FBF\u4E8E\u5207\u6362\u8D26\u53F7").addButton((button) => button.setButtonText(connected ? "\u91CD\u65B0\u767B\u5F55" : "\u767B\u5F55").setCta().onClick(() => void this.plugin.login()));
     }
     let manualTokenDraft = "";
     new import_obsidian4.Setting(containerEl).setName("\u624B\u52A8 Token").setDesc("\u81EA\u52A8\u767B\u5F55\u4E0D\u53EF\u7528\u65F6\uFF0C\u53EF\u624B\u52A8\u586B\u5199 Jwt-Token\uFF1B\u51ED\u8BC1\u7531 Obsidian SecretStorage \u4FDD\u5B58").addText((text) => {
@@ -1016,7 +1099,7 @@ var MubuSyncSettingTab = class extends import_obsidian4.PluginSettingTab {
       this.display();
     })).addButton((button) => button.setButtonText("\u9A8C\u8BC1").onClick(() => void this.plugin.verifySavedToken())).addButton((button) => button.setButtonText("\u6E05\u9664").onClick(async () => {
       await this.plugin.clearLogin();
-      new import_obsidian4.Notice("\u5E55\u5E03\u767B\u5F55\u51ED\u8BC1\u548C\u767B\u5F55\u4F1A\u8BDD\u5DF2\u6E05\u9664");
+      new import_obsidian4.Notice("\u5E55\u5E03\u767B\u5F55\u51ED\u8BC1\u548C\u63D2\u4EF6\u5185\u7684\u5E55\u5E03\u4F1A\u8BDD\u5DF2\u6E05\u9664\uFF0C\u53EF\u91CD\u65B0\u767B\u5F55\u5176\u4ED6\u8D26\u53F7");
       this.display();
     }));
     new import_obsidian4.Setting(containerEl).setName("\u540C\u6B65\u76EE\u5F55").setDesc("\u5E55\u5E03\u6587\u6863\u5199\u5165\u7684 Obsidian \u4ED3\u5E93\u76EE\u5F55").addText((text) => text.setPlaceholder("Mubu").setValue(this.plugin.settings.syncFolder).onChange(async (value) => {
